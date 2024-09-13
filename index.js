@@ -8,6 +8,10 @@ const app = express();
 app.use(cors());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
+app.use(express.static('public'))
+app.get('/', (req, res) => {
+  res.sendFile(__dirname + '/views/index.html')
+});
 
 // Conectar ao MongoDB
 mongoose.connect(process.env.MONGO_URI)
