@@ -1,22 +1,24 @@
-const express = require('express');
-const mongoose = require('mongoose');
-const cors = require('cors');
-require('dotenv').config();
+const express = require("express");
+const mongoose = require("mongoose");
+const cors = require("cors");
+require("dotenv").config();
 
 const app = express();
 
 app.use(cors());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
-app.use(express.static('public'))
-app.get('/', (req, res) => {
-  res.sendFile(__dirname + '/views/index.html')
+app.use(express.static("public"));
+
+app.get("/", (req, res) => {
+  res.sendFile(__dirname + "/views/index.html");
 });
 
 // Conectar ao MongoDB
-mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log('Conectado ao MongoDB'))
-  .catch(err => console.error('Erro ao conectar ao MongoDB:', err));
+mongoose
+  .connect(process.env.MONGO_URI)
+  .then(() => console.log("Conectado ao MongoDB"))
+  .catch((err) => console.error("Erro ao conectar ao MongoDB:", err));
 
 // Criar schema e modelo para o usuário
 const userSchema = new mongoose.Schema({
@@ -31,17 +33,13 @@ const exerciseSchema = new mongoose.Schema({
 });
 
 // Instanciação dos Modelos
-const User = mongoose.model('User', userSchema);
-const Exercise = mongoose.model('Exercise', exerciseSchema);
-
-// Middleware
-app.use((req, res, next) => {
-  console.log(req.method, req.path, req.params, req.query, req.body);
-  next();
-});
+const User = mongoose.model("User", userSchema);
+const Exercise = mongoose.model("Exercise", exerciseSchema);
 
 // Endpoints
-app.post('/api/users', async (req, res) => {
+
+// Criar novo usuário
+app.post("/api/users", async (req, res) => {
   try {
     const existingUser = await User.findOne({ username: req.body.username });
     if (!existingUser) {
@@ -50,18 +48,16 @@ app.post('/api/users', async (req, res) => {
     }
     return res.json({ username: existingUser.username, _id: existingUser._id });
   } catch (error) {
-    console.error('Erro ao criar usuário:', error);
-    return res.json({ error: 'Erro ao criar usuário' });
+    return res.json({ error: "Erro ao criar usuário" });
   }
 });
 
+// Adicionar exercício a um usuário
 app.post("/api/users/:_id/exercises", async (req, res) => {
   try {
-    // Encontrar o usuário pelo ID
     const user = await User.findById(req.params._id);
-    if (!user) return res.json({ error: "user doesn't exist" });
+    if (!user) return res.json({ error: "Usuário não encontrado" });
 
-    // Criar um novo exercício
     const newExercise = await Exercise.create({
       username: user.username,
       description: req.body.description,
@@ -69,36 +65,33 @@ app.post("/api/users/:_id/exercises", async (req, res) => {
       date: req.body.date ? new Date(req.body.date) : new Date(),
     });
 
-    // Responder com o objeto do usuário incluindo o novo exercício
     return res.json({
       username: user.username,
       description: newExercise.description,
       duration: newExercise.duration,
       date: newExercise.date.toDateString(),
-      _id: user._id, // Mantém o ID como ObjectId
+      _id: user._id,
     });
   } catch (error) {
-    console.error(error);
-    return res.json({ error: "Operation failed" });
+    return res.json({ error: "Erro ao adicionar exercício" });
   }
 });
 
-app.get("/api/users", async(req, res) => {
+// Obter lista de usuários
+app.get("/api/users", async (req, res) => {
   try {
-    // Encontra todos os usuários e remove o campo __v
-    const users = await User.find({}).select({ __v: 0 });
-    return res.json(users); // Retorna a lista de usuários como um array
+    const users = await User.find({}).select({ __v: 0 }).lean();
+    return res.json(users);
   } catch (error) {
-    console.error(error);
-    return res.json({ error: "invalid" });
+    return res.json({ error: "Erro ao obter usuários" });
   }
 });
 
-
-app.get('/api/users/:_id/logs', async (req, res) => {
+// Obter logs de exercícios de um usuário
+app.get("/api/users/:_id/logs", async (req, res) => {
   try {
-    const user = await User.findById(req.params._id);
-    if (!user) return res.json({ error: 'Usuário não encontrado' });
+    const user = await User.findById(req.params._id).lean();
+    if (!user) return res.json({ error: "Usuário não encontrado" });
 
     const { from, to, limit } = req.query;
     let filter = { username: user.username };
@@ -106,21 +99,25 @@ app.get('/api/users/:_id/logs', async (req, res) => {
     if (from) filter.date = { $gte: new Date(from) };
     if (to) filter.date = { ...filter.date, $lte: new Date(to) };
 
-    const exercises = await Exercise.find(filter).limit(parseInt(limit)).select({ _id: 0, username: 0, __v: 0 });
-    
+    const exercises = await Exercise.find(filter)
+      .limit(parseInt(limit) || 0)
+      .select({ _id: 0, username: 0, __v: 0 })
+      .lean(); // Retorna objetos "leves" para melhor desempenho
+
+    const formattedLogs = exercises.map((e) => ({
+      description: e.description,
+      duration: e.duration,
+      date: e.date.toDateString(),
+    }));
+
     return res.json({
       _id: user._id,
       username: user.username,
-      count: exercises.length,
-      log: exercises.map(e => ({
-        description: e.description,
-        duration: e.duration,
-        date: e.date.toDateString(),
-      })),
+      count: formattedLogs.length,
+      log: formattedLogs,
     });
   } catch (error) {
-    console.error('Erro ao obter log de exercícios:', error);
-    return res.json({ error: 'Erro ao obter log de exercícios' });
+    return res.json({ error: "Erro ao obter log de exercícios" });
   }
 });
 
